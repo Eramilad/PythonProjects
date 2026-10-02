@@ -1,0 +1,243 @@
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.model_selection import train_test_split
+
+# ==========================================
+# 1. LOAD DATASET & SIMULATE BASELINE DATA
+# ==========================================
+# Replacing this synthetic data block with your actual CSV loading:
+# df = pd.read_csv("alt_credit_data.csv")
+
+np.random.seed(42)
+n_samples = 500
+
+synthetic_data = {
+    "applicant_id": [f"APP-{1000 + i}" for i in range(n_samples)],
+    "weekly_topup_freq": np.random.poisson(lam=3, size=n_samples),
+    "missed_utility_payments": np.random.choice(
+        [0, 1, 2, 3], size=n_samples, p=[0.6, 0.25, 0.1, 0.05]
+    ),
+    "total_market_spent": np.random.uniform(50, 1000, size=n_samples),
+    "mobile_money_tx_vol": np.random.uniform(100, 5000, size=n_samples),
+    "loan_status": np.random.choice(
+        ["Approved", "Rejected"], size=n_samples, p=[0.65, 0.35]
+    ),
+}
+
+df = pd.DataFrame(synthetic_data)
+
+# Convert binary outcome to target vector (1 = Repaid/Approved, 0 = Defaulted/Rejected)
+df["target"] = (df["loan_status"] == "Approved").astype(int)
+
+# ==========================================
+# 2. FEATURE ENGINEERING
+# ==========================================
+# Rule-based behavioral indicator: High top-ups AND perfect utility record
+df["is_high_reliability"] = (
+    (df["weekly_topup_freq"] >= 4) & (df["missed_utility_payments"] == 0)
+).astype(int)
+
+# High mobile money volume indicator
+df["is_high_momo_volume"] = (
+    df["mobile_money_tx_vol"] > df["mobile_money_tx_vol"].median()
+).astype(int)
+
+feature_cols = [
+    "weekly_topup_freq",
+    "missed_utility_payments",
+    "total_market_spent",
+    "mobile_money_tx_vol",
+    "is_high_reliability",
+    "is_high_momo_volume",
+]
+
+X = df[feature_cols]
+y = df["target"]
+
+# ==========================================
+# 3. TRAIN CLASSIFICATION MODEL
+# ==========================================
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+clf = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+clf.fit(X_train, y_train)
+
+# Model Performance Evaluation
+y_pred_proba = clf.predict_proba(X_test)[:, 1]
+print("--- Model Performance ---")
+print(f"ROC-AUC Score: {roc_auc_score(y_test, y_pred_proba):.2f}")
+
+# ==========================================
+# 4. PREDICT ON NEW UNBANKED APPLICANTS
+# ==========================================
+# Simulate new applicants who have no prior borrowing history
+new_unbanked_applicants = pd.DataFrame(
+    {
+        "applicant_id": ["NEW-001", "NEW-002", "NEW-003", "NEW-004"],
+        "weekly_topup_freq": [5, 1, 4, 2],
+        "missed_utility_payments": [0, 2, 0, 1],
+        "total_market_spent": [850.0, 120.0, 600.0, 300.0],
+        "mobile_money_tx_vol": [3200.0, 450.0, 2800.0, 1100.0],
+    }
+)
+
+# Apply identical Feature Engineering
+new_unbanked_applicants["is_high_reliability"] = (
+    (new_unbanked_applicants["weekly_topup_freq"] >= 4)
+    & (new_unbanked_applicants["missed_utility_payments"] == 0)
+).astype(int)
+
+new_unbanked_applicants["is_high_momo_volume"] = (
+    new_unbanked_applicants["mobile_money_tx_vol"]
+    > df["mobile_money_tx_vol"].median()
+).astype(int)
+
+# Score new applicants
+X_new = new_unbanked_applicants[feature_cols]
+repayment_probabilities = clf.predict_proba(X_new)[:, 1]
+
+# ==========================================
+# 5. OUTPUT CLEAN PREDICTION TABLE
+# ==========================================
+results_df = pd.DataFrame(
+    {
+        "Applicant ID": new_unbanked_applicants["applicant_id"],
+        "Repayment Probability Score": [
+            f"{prob * 100:.1f}%" for prob in repayment_probabilities
+        ],
+    }
+)
+
+
+# Helper function to categorize risk and credit recommendation
+def assign_risk_and_decision(prob):
+    if prob >= 0.75:
+        return "Tier 1 (Low Risk)", "Approve - Auto"
+    elif prob >= 0.50:
+        return "Tier 2 (Medium Risk)", "Approve - Manual Review"
+    elif prob >= 0.35:
+        return "Tier 3 (High Risk)", "Conditional Approval (Low Limit)"
+    else:
+        return "Tier 4 (Very High Risk)", "Decline"
+
+
+results_df[["Risk Tier", "Credit Recommendation"]] = [
+    assign_risk_and_decision(p) for p in repayment_probabilities
+]
+
+print("\n--- Predictions for New Unbanked Applicants ---")
+print(results_df.to_string(index=False))
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
+
+# ==========================================
+# 1. LOAD DATASET & LINK TARGET TO BEHAVIOR
+# ==========================================
+np.random.seed(42)
+n_samples = 500
+
+synthetic_data = {
+    'applicant_id': [f'APP-{1000+i}' for i in range(n_samples)],
+    'weekly_topup_freq': np.random.poisson(lam=3, size=n_samples),
+    'missed_utility_payments': np.random.choice([0, 1, 2, 3], size=n_samples, p=[0.6, 0.25, 0.1, 0.05]),
+    'total_market_spent': np.random.uniform(50, 1000, size=n_samples),
+    'mobile_money_tx_vol': np.random.uniform(100, 5000, size=n_samples)
+}
+
+df = pd.DataFrame(synthetic_data)
+
+# FEATURE ENGINEERING
+df['is_high_reliability'] = ((df['weekly_topup_freq'] >= 4) & (df['missed_utility_payments'] == 0)).astype(int)
+df['is_high_momo_volume'] = (df['mobile_money_tx_vol'] > df['mobile_money_tx_vol'].median()).astype(int)
+
+# GROUND TRUTH PATTERN LOGIC: Tie repayment directly to behavior features + noise
+# High top-up frequency & zero missed payments strongly boost repayment odds
+repayment_score = (
+    0.35 * (df['weekly_topup_freq'] / 6)
+    - 0.40 * (df['missed_utility_payments'] / 3)
+    + 0.25 * (df['mobile_money_tx_vol'] / 5000)
+    + 0.30 * df['is_high_reliability']
+    + np.random.normal(0, 0.1, size=n_samples)
+)
+
+# Convert to binary target: 1 = Repaid, 0 = Defaulted
+df['target'] = (repayment_score > repayment_score.median()).astype(int)
+
+# ==========================================
+# 2. TRAIN CLASSIFICATION MODEL
+# ==========================================
+feature_cols = ['weekly_topup_freq', 'missed_utility_payments', 'total_market_spent', 
+                'mobile_money_tx_vol', 'is_high_reliability', 'is_high_momo_volume']
+
+X = df[feature_cols]
+y = df['target']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+clf = RandomForestClassifier(n_estimators=100, max_depth=4, random_state=42)
+clf.fit(X_train, y_train)
+
+# Model Performance Evaluation
+y_pred_proba = clf.predict_proba(X_test)[:, 1]
+print("--- Model Performance ---")
+print(f"ROC-AUC Score: {roc_auc_score(y_test, y_pred_proba):.2f}")
+
+# ==========================================
+# 3. PREDICT ON NEW UNBANKED APPLICANTS
+# ==========================================
+new_unbanked_applicants = pd.DataFrame({
+    'applicant_id': ['NEW-001', 'NEW-002', 'NEW-003', 'NEW-004'],
+    'weekly_topup_freq': [5, 1, 4, 1],
+    'missed_utility_payments': [0, 3, 0, 1],
+    'total_market_spent': [850.0, 120.0, 600.0, 200.0],
+    'mobile_money_tx_vol': [4200.0, 350.0, 2800.0, 800.0]
+})
+
+new_unbanked_applicants['is_high_reliability'] = (
+    (new_unbanked_applicants['weekly_topup_freq'] >= 4) & 
+    (new_unbanked_applicants['missed_utility_payments'] == 0)
+).astype(int)
+
+new_unbanked_applicants['is_high_momo_volume'] = (
+    new_unbanked_applicants['mobile_money_tx_vol'] > df['mobile_money_tx_vol'].median()
+).astype(int)
+
+X_new = new_unbanked_applicants[feature_cols]
+repayment_probabilities = clf.predict_proba(X_new)[:, 1]
+
+# ==========================================
+# 4. OUTPUT RESULTS
+# ==========================================
+results_df = pd.DataFrame({
+    'Applicant ID': new_unbanked_applicants['applicant_id'],
+    'Repayment Probability Score': [f"{prob*100:.1f}%" for prob in repayment_probabilities]
+})
+
+def assign_risk_and_decision(prob):
+    if prob >= 0.75:
+        return 'Tier 1 (Low Risk)', 'Approve - Auto'
+    elif prob >= 0.55:
+        return 'Tier 2 (Medium Risk)', 'Approve - Manual Review'
+    elif prob >= 0.40:
+        return 'Tier 3 (High Risk)', 'Conditional Approval'
+    else:
+        return 'Tier 4 (Very High Risk)', 'Decline'
+
+results_df[['Risk Tier', 'Credit Recommendation']] = [
+    assign_risk_and_decision(p) for p in repayment_probabilities
+]
+
+print("\n--- Predictions for New Unbanked Applicants ---")
+print(results_df.to_string(index=False))
